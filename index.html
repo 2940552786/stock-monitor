@@ -89,46 +89,34 @@
         .dk-toggle.active{background:var(--blue);color:#fff;border-color:var(--blue)}
         ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 
-        /* ========== 手机端适配 (≤768px) ========== */
+        /* ========== 手机端 (≤768px) ========== */
         @media (max-width: 768px) {
-            /* 手机端整体 */
             body{overflow-y:auto;height:auto;-webkit-tap-highlight-color:transparent}
-            #header{height:36px;padding:4px 8px}
+            #header{height:34px;padding:4px 8px}
             #header .title{font-size:13px}
-            #header .right-info{gap:4px}
-            #header .right-info .refresh-bar{display:none}
+            #header .right-info .refresh-bar,
             #header .right-info #market-status span:last-child{display:none}
             #header #status-text{font-size:10px}
-            /* 单栏堆叠 */
             #main{display:flex;flex-direction:column;height:auto;overflow:visible}
-            /* 自选股横滑条 */
-            #watchlist-panel{flex-shrink:0;border-right:none;border-bottom:1px solid var(--border);flex-direction:row;align-items:center;padding:4px 8px;gap:6px}
+            /* 自选股：顶端横条 */
+            #watchlist-panel{flex-shrink:0;border-right:none;border-bottom:1px solid var(--border);flex-direction:row;align-items:center;padding:4px 8px;gap:4px;background:var(--surface)}
             #watchlist-panel h3{display:none}
-            #watchlist{flex:1;overflow-x:auto;overflow-y:hidden;display:flex;gap:6px;padding:0;white-space:nowrap;min-height:34px;align-items:center;-webkit-overflow-scrolling:touch}
+            #watchlist{flex:1;overflow-x:auto;overflow-y:hidden;display:flex;gap:5px;padding:0;white-space:nowrap;min-height:32px;align-items:center;-webkit-overflow-scrolling:touch;scrollbar-width:none}
             #watchlist::-webkit-scrollbar{display:none}
-            .watch-item{flex-shrink:0;padding:6px 10px;font-size:13px;white-space:nowrap;border:1px solid var(--border);border-radius:16px;margin:0;gap:4px}
+            .watch-item{flex-shrink:0;padding:5px 10px;font-size:12px;white-space:nowrap;border:1px solid var(--border);border-radius:14px;margin:0;gap:3px;background:var(--bg)}
             .watch-item.active{background:var(--blue);color:#fff;border-color:var(--blue)}
             .watch-item .del-btn{display:none!important}
-            .watch-item .pct{font-size:11px;min-width:auto;margin-left:4px}
-            .watch-item .code{font-size:11px;margin-right:0}
-            /* 手机端添加按钮 */
-            #watchlist-panel .m-add-btn{display:flex!important;flex-shrink:0;width:30px;height:30px;border-radius:50%;background:var(--blue);color:#fff;border:none;font-size:18px;cursor:pointer;align-items:center;justify-content:center;line-height:1}
+            .watch-item .pct{font-size:10px;min-width:auto;margin-left:2px}
+            #watchlist-panel .m-add-btn{display:flex!important;flex-shrink:0;width:28px;height:28px;border-radius:50%;background:var(--blue);color:#fff;border:none;font-size:16px;cursor:pointer;align-items:center;justify-content:center}
             #add-stock{display:none}
-            /* 中间面板 */
-            #center-panel{padding:4px;gap:4px;flex:1}
-            #stock-bar{padding:6px 10px;font-size:12px;flex-wrap:wrap;gap:2px 8px;min-height:auto;border-radius:8px}
-            #sb-name{font-size:14px}
-            #sb-price{font-size:18px}
-            #sb-pct{font-size:13px}
-            .sb-sep:nth-child(9),.sb-sep:nth-child(11){display:none}
-            .sb-row{font-size:11px}
-            #trend-chart{flex:none;height:45vh;min-height:280px}
-            #signal-console{flex:none;max-height:180px}
-            #chip-chart{flex:none;height:140px}
-            /* 右侧面板 */
-            #info-panel{border-left:none;border-top:1px solid var(--border);padding:8px;flex-shrink:0;flex-direction:row;flex-wrap:wrap;gap:8px}
-            #info-panel h3{width:100%;font-size:13px;margin-bottom:0}
-            .chip-metric{flex:1;min-width:45%;padding:6px 8px;margin:0}
+            /* 中间：全宽 */
+            #center-panel{padding:4px;gap:3px;flex:1}
+            #stock-bar{display:none}  /* 股票信息在图表tooltip里看 */
+            #trend-chart{flex:none;height:50vh;min-height:300px}
+            #signal-console{flex:none;max-height:160px}
+            #chip-chart{display:none}  /* 手机端隐藏筹码图 */
+            /* 右侧面板：隐藏 */
+            #info-panel{display:none}
             /* 添加弹出层 */
             #m-add-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:1001;align-items:flex-end;justify-content:center}
             #m-add-overlay.show{display:flex}
@@ -137,13 +125,13 @@
             #m-add-sheet input{width:100%;padding:12px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:8px;font-size:16px;margin-bottom:10px;outline:none}
             #m-add-sheet .m-acts{display:flex;gap:8px}
             #m-add-sheet .m-acts button{flex:1;padding:12px;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer}
-            .m-ok{background:var(--blue);color:#fff}
-            .m-cancel{background:var(--border);color:var(--text)}
-            /* 信号行 */
-            .signal-row{font-size:12px;padding:5px 8px;gap:4px}
-            .signal-row .sig-time{font-size:11px;min-width:40px}
-            .signal-row .sig-name{font-size:12px}
+            .m-ok{background:var(--blue);color:#fff}.m-cancel{background:var(--border);color:var(--text)}
+            .signal-row{font-size:11px;padding:4px 8px;gap:4px}
+            .signal-row .sig-time{font-size:10px;min-width:36px}
+            .signal-row .sig-name{font-size:11px}
             .signal-row .sig-code{font-size:10px}
+            /* 登录弹窗 */
+            #login-overlay>div{padding:20px 16px;width:100%;max-width:320px}
         }
     </style>
 </head>
