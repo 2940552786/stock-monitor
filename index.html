@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>A股分时看盘 · 筹码分布 · 顶底研判</title>
+    <title>A股盘口分时 · 集合竞价 · 筹码博弈</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
         :root {
@@ -113,7 +113,7 @@
 <body>
 
 <div id="header">
-    <div class="title">📈 <span>A股</span>分时看盘 · 筹码分布 · 顶底研判</div>
+    <div class="title">📈 <span>A股</span>盘口分时 · 集合竞价 · 筹码博弈</div>
     <div class="right-info">
         <span id="auth-user" style="font-size:12px;color:var(--blue)"></span>
         <button id="btn-admin" onclick="showAdmin()" style="background:none;border:1px solid var(--yellow);color:var(--yellow);padding:2px 8px;border-radius:4px;cursor:pointer;font-size:11px;display:none">管理</button>
@@ -196,16 +196,20 @@
 
 <div id="login-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.85);z-index:999;align-items:center;justify-content:center">
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px;width:360px;max-width:90vw">
-        <h2 style="color:#fff;margin-bottom:20px;text-align:center">📈 A股分时看盘</h2>
+        <h2 style="color:#fff;margin-bottom:20px;text-align:center">📈 A股盘口分时 · 集合竞价 · 筹码博弈</h2>
         <div id="login-form">
             <input id="login-user" placeholder="用户名" style="width:100%;padding:10px;margin-bottom:10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:14px">
             <input id="login-pw" type="password" placeholder="密码" style="width:100%;padding:10px;margin-bottom:6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:14px">
-            <input id="login-webhook" placeholder="企业微信机器人URL（可选）" style="width:100%;padding:10px;margin-bottom:12px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:14px">
+            <input id="login-webhook" placeholder="企业微信机器人Webhook URL（注册必填，登录可选）" style="width:100%;padding:10px;margin-bottom:4px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:14px">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:12px;line-height:1.5">
+                💡 <b>用途：</b>自选股异动信号实时推送到企业微信。<b style="color:var(--green)">注册必填</b>，登录时如已注册过可留空。<br>
+                📋 <b>获取：</b>企业微信 → 群聊 → 右上角<span style="color:var(--yellow)">···</span> → 群机器人 → 添加 → 复制Webhook地址
+            </div>
             <div style="display:flex;gap:8px">
                 <button id="btn-login" style="flex:1;padding:10px;background:var(--blue);color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">登录</button>
                 <button id="btn-register" style="flex:1;padding:10px;background:var(--green);color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">注册</button>
             </div>
-            <div id="login-msg" style="color:var(--red);font-size:12px;margin-top:8px;text-align:center"></div>
+            <div id="login-msg" style="color:var(--red);font-size:12px;margin-top:8px;text-align:left;line-height:1.6"></div>
         </div>
     </div>
 </div>
@@ -277,11 +281,12 @@ async function doAuth(action) {
     const p = document.getElementById('login-pw').value.trim();
     const w = document.getElementById('login-webhook').value.trim();
     const msg = document.getElementById('login-msg');
-    if (!u || !p) { msg.textContent = '请填写用户名和密码'; return; }
+    if (!u || !p) { msg.innerHTML = '请填写用户名和密码'; return; }
+    if (action === 'register' && !w) { msg.innerHTML = '⚠️ 请填写企业微信机器人Webhook URL（必填）'; return; }
     try {
         const r = await fetch('/api/auth/' + action, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:u, password:p, webhook:w})});
         const d = await r.json();
-        if (d.error) { msg.textContent = d.error; return; }
+        if (d.error) { msg.innerHTML = d.error.replace(/\n/g, '<br>'); return; }
         AUTH_TOKEN = d.token; AUTH_USER = d.username;
         // 彻底清除旧账号所有数据
         ['stock_watchlist','trend_zoom'].forEach(k => { sessionStorage.removeItem(k); localStorage.removeItem(k); });

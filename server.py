@@ -1,6 +1,6 @@
 """
-A股分时图看盘工具 - 后端代理服务 v1.1
-解决前端跨域问题，代理新浪/腾讯API请求
+A股盘口分时看盘工具 - 后端代理服务
+解决前端跨域问题，代理新浪/腾讯API请求，支持集合竞价、盘口委比、筹码分布
 """
 import json
 import re
@@ -259,6 +259,9 @@ def api_register():
     if not username or not password: return jsonify({'error': '用户名和密码不能为空'}), 400
     if len(username) < 2: return jsonify({'error': '用户名至少2个字符'}), 400
     if len(password) < 3: return jsonify({'error': '密码至少3位'}), 400
+    if not webhook: return jsonify({'error': '请填写企业微信机器人Webhook URL（必填）。\n获取方法：打开企业微信 → 群聊设置 → 群机器人 → 添加机器人 → 复制Webhook地址。\n用于接收异动信号推送，如不需要推送请仍填写一个占位URL。'}), 400
+    if not webhook.startswith('https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key='):
+        return jsonify({'error': 'Webhook URL格式不正确，应以 https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key= 开头。\n请在企业微信群聊设置 → 群机器人中获取正确的Webhook地址。'}), 400
     users = _load_users()
     if username in users: return jsonify({'error': '用户名已存在'}), 400
     pw_hash = _hash_pw(password)
@@ -1083,7 +1086,7 @@ if __name__ == '__main__':
     import sys
     port = int(os.environ.get('PORT', 5000))
     print("=" * 50)
-    print("  A股分时图看盘工具 v1.1")
+    print("  A股盘口分时 · 集合竞价 · 筹码博弈")
     print(f"  浏览器访问: http://localhost:{port}")
     print("=" * 50)
     app.run(host='0.0.0.0', port=port, debug=False)
