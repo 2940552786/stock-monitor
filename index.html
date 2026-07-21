@@ -108,16 +108,16 @@
             .watch-item .pct{font-size:11px;min-width:auto;margin-left:3px}
             #watchlist-panel .m-add-btn{display:flex!important;flex-shrink:0;width:32px;height:32px;border-radius:50%;background:var(--blue);color:#fff;border:none;font-size:18px;cursor:pointer;align-items:center;justify-content:center}
             #add-stock{display:none}
-            /* 隐藏中心面板（图表等） */
-            #center-panel{display:none}
-            /* 右侧面板：隐藏 */
-            #info-panel{display:none}
-            /* 信号监控台：独立全宽显示 */
-            #signal-console-mobile{display:flex!important;flex:1;background:var(--surface);border-radius:8px;border:1px solid var(--border);margin:6px 8px;flex-direction:column;min-height:50vh}
-            #signal-console-mobile .sc-header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--border)}
-            #signal-console-mobile .sc-header .sc-title{font-size:14px;font-weight:700;color:var(--text)}
-            #signal-console-mobile .sc-header .sc-count{font-size:12px;color:var(--text2)}
-            #signal-console-mobile .signal-feed-mobile{flex:1;overflow-y:auto;padding:4px 8px}
+            /* 中心面板：只显示信号台 */
+            #center-panel{display:flex;flex-direction:column;padding:4px;gap:4px}
+            #stock-bar{display:none}
+            #trend-chart{display:none}
+            #signal-console{flex:1;max-height:none;min-height:50vh}
+            #chip-chart{display:none}
+            /* 右侧面板显示 */
+            #info-panel{display:flex;flex-shrink:0;border-left:none;border-top:1px solid var(--border);padding:8px;flex-direction:row;flex-wrap:wrap;gap:6px}
+            #info-panel h3{width:100%;font-size:13px;margin-bottom:0}
+            .chip-metric{flex:1;min-width:40%;padding:6px 8px;margin:0}
             /* 添加弹出层 */
             #m-add-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:1001;align-items:flex-end;justify-content:center}
             #m-add-overlay.show{display:flex}
@@ -158,16 +158,6 @@
 </div>
 
 <div id="main">
-    <!-- 手机端独立信号监控台 -->
-    <div id="signal-console-mobile" style="display:none">
-        <div class="sc-header">
-            <span class="sc-title">📡 信号监控台</span>
-            <span class="sc-count" id="sig-count-m">--</span>
-        </div>
-        <div class="signal-feed-mobile" id="signal-feed-mobile">
-            <div style="color:var(--text2);font-size:12px;text-align:center;padding:20px">等待异动...</div>
-        </div>
-    </div>
     <div id="watchlist-panel">
         <h3>📋 自选股</h3>
         <div id="watchlist"></div>
@@ -998,21 +988,6 @@ function renderSignalFeed() {
             <span class="sig-name" style="margin-right:6px">${g.name}</span>
             <span style="display:flex;flex-wrap:wrap;gap:2px">${tags}</span>`;
         feed.insertBefore(div, feed.firstChild);
-    }
-    // 手机端信号同步
-    const mFeed = document.getElementById('signal-feed-mobile');
-    const mCount = document.getElementById('sig-count-m');
-    if (mFeed && mCount) {
-        mCount.textContent = `共${SIGNAL_FEED.length}条`;
-        // 简单全量刷新手机端（数据量小）
-        mFeed.innerHTML = SIGNAL_FEED.slice(-30).reverse().map(g => {
-            const tm = (g.time||'').substring(11,16) || (g.time||'').substring(0,5);
-            const tags = g.items.map(it => {
-                const alpha = {'high':'44','medium':'22','low':'11'}[it.s]||'22';
-                return `<span style="display:inline-block;background:${it.c||'#58a6ff'}${alpha};color:${it.c||'#58a6ff'};padding:1px 5px;border-radius:3px;font-size:10px;margin:1px 2px">${it.l}</span>`;
-            }).join('');
-            return `<div class="signal-row"><span class="sig-time">${tm}</span><span class="sig-code">${g.code}</span><span class="sig-name">${g.name}</span><span style="display:flex;flex-wrap:wrap;gap:2px;margin-left:auto">${tags}</span></div>`;
-        }).join('') || '<div style="color:var(--text2);text-align:center;padding:20px">等待异动...</div>';
     }
     // 更新活跃股票图表标记
     if (STATE.activeStock && STATE.globalSignals[STATE.activeStock]) {
