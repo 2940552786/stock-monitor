@@ -91,40 +91,33 @@
 
         /* ========== 手机端 (≤768px) ========== */
         @media (max-width: 768px) {
-            body{overflow-y:auto;height:auto;-webkit-tap-highlight-color:transparent}
-            #header{height:auto;padding:6px 8px;flex-wrap:wrap;gap:4px}
-            #header .title{font-size:13px}
-            #header .right-info{gap:6px;flex-wrap:wrap;justify-content:flex-end}
+            body{overflow-y:auto;height:100vh;-webkit-tap-highlight-color:transparent}
+            #header{height:auto;padding:6px 10px;display:flex;flex-wrap:wrap;gap:4px;justify-content:space-between}
+            #header .title{font-size:14px}
+            #header .right-info{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
             #header .right-info .refresh-bar{display:none}
-            #header button{font-size:12px!important;padding:3px 8px!important}
-            #main{display:flex;flex-direction:column;height:auto;overflow:visible}
-            /* 自选股横滑条 */
-            #watchlist-panel{flex-shrink:0;border-right:none;border-bottom:1px solid var(--border);flex-direction:row;align-items:center;padding:6px 8px;gap:6px;background:var(--surface)}
+            #header #status-text{display:none}
+            #header button{font-size:12px!important;padding:4px 10px!important;display:inline-block!important}
+            #main{display:flex;flex-direction:column;height:calc(100vh - 40px);overflow:hidden}
+            /* 自选股：纵向列表 */
+            #watchlist-panel{flex:4;display:flex;flex-direction:column;border-right:none;border-bottom:1px solid var(--border);overflow:hidden}
             #watchlist-panel h3{display:none}
-            #watchlist{flex:1;overflow-x:auto;overflow-y:hidden;display:flex;gap:6px;padding:0;white-space:nowrap;min-height:36px;align-items:center;-webkit-overflow-scrolling:touch;scrollbar-width:none}
-            #watchlist::-webkit-scrollbar{display:none}
-            .watch-item{flex-shrink:0;padding:6px 12px;font-size:13px;white-space:nowrap;border:1px solid var(--border);border-radius:16px;margin:0;gap:4px;background:var(--bg)}
-            .watch-item.active{background:var(--blue);color:#fff;border-color:var(--blue);font-weight:600}
-            .watch-item .del-btn{display:none!important}
-            .watch-item .pct{font-size:11px;min-width:auto;margin-left:3px}
-            #watchlist-panel .m-add-btn{display:flex!important;flex-shrink:0;width:32px;height:32px;border-radius:50%;background:var(--blue);color:#fff;border:none;font-size:18px;cursor:pointer;align-items:center;justify-content:center}
-            #add-stock{display:none}
-            /* 自选股纵向排列 */
-            #watchlist{display:flex;flex-direction:column;overflow-y:auto;gap:2px;padding:4px;min-height:0;max-height:120px}
-            .watch-item{flex-shrink:0;padding:6px 10px;font-size:13px;border:1px solid var(--border);border-radius:8px;margin:0;display:flex;justify-content:space-between;align-items:center}
+            #watchlist{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:3px;padding:6px}
+            .watch-item{flex-shrink:0;padding:8px 12px;font-size:14px;border:1px solid var(--border);border-radius:8px;display:flex;justify-content:space-between;align-items:center;background:var(--bg)}
             .watch-item.active{background:var(--blue);color:#fff;border-color:var(--blue)}
-            .watch-item .del-btn{display:block!important;font-size:14px;padding:0 4px}
-            /* 中心面板 */
-            #center-panel{display:flex!important;flex-direction:column;padding:4px;gap:4px;flex:1;min-height:50vh}
+            .watch-item .del-btn{display:block!important;font-size:16px;padding:2px 6px}
+            .watch-item .pct{font-size:13px;min-width:auto}
+            #watchlist-panel .m-add-btn{display:flex!important;width:100%;height:36px;border-radius:8px;background:var(--blue);color:#fff;border:none;font-size:16px;cursor:pointer;align-items:center;justify-content:center;margin:4px 0}
+            #add-stock{display:none}
+            /* 信号监控台 */
+            #center-panel{flex:6;display:flex!important;flex-direction:column;padding:4px;overflow:hidden}
             #stock-bar{display:none}
             #trend-chart{display:none}
-            #signal-console{display:flex!important;flex:1;max-height:none}
+            #signal-console{display:flex!important;flex:1;max-height:none;border-radius:0;border:none}
             #chip-chart{display:none}
-            /* 右侧面板显示 */
-            #info-panel{display:flex;flex-shrink:0;border-left:none;border-top:1px solid var(--border);padding:8px;flex-direction:row;flex-wrap:wrap;gap:6px}
-            #info-panel h3{width:100%;font-size:13px;margin-bottom:0}
-            .chip-metric{flex:1;min-width:40%;padding:6px 8px;margin:0}
-            /* 添加弹出层 */
+            /* 隐藏右侧 */
+            #info-panel{display:none}
+            /* 弹出层 */
             #m-add-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:1001;align-items:flex-end;justify-content:center}
             #m-add-overlay.show{display:flex}
             #m-add-sheet{background:var(--surface);border-radius:16px 16px 0 0;padding:20px 16px 32px;width:100%;max-width:500px}
@@ -133,13 +126,10 @@
             #m-add-sheet .m-acts{display:flex;gap:8px}
             #m-add-sheet .m-acts button{flex:1;padding:12px;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer}
             .m-ok{background:var(--blue);color:#fff}.m-cancel{background:var(--border);color:var(--text)}
-            /* 信号行 */
             .signal-row{font-size:12px;padding:6px 8px;gap:5px}
             .signal-row .sig-time{font-size:11px;min-width:42px}
-            .signal-row .sig-name{font-size:12px}
-            .signal-row .sig-code{font-size:11px}
-            /* 登录弹窗 */
             #login-overlay>div{padding:20px 16px;width:100%;max-width:320px}
+            #btn-admin,#btn-logout{display:inline-block!important}
         }
     </style>
 </head>
