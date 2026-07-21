@@ -9,12 +9,10 @@ import datetime
 import hashlib
 import secrets
 from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
 import requests
 import os
 
 app = Flask(__name__)
-CORS(app)
 
 # ============ 用户系统 ============
 USERS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'users.json')
