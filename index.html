@@ -92,10 +92,11 @@
         /* ========== 手机端 (≤768px) ========== */
         @media (max-width: 768px) {
             body{overflow-y:auto;height:auto;-webkit-tap-highlight-color:transparent}
-            #header{height:auto;padding:6px 8px;flex-wrap:wrap}
+            #header{height:auto;padding:6px 8px;flex-wrap:wrap;gap:4px}
             #header .title{font-size:13px}
-            #header .right-info{gap:4px;flex-wrap:wrap}
+            #header .right-info{gap:6px;flex-wrap:wrap;justify-content:flex-end}
             #header .right-info .refresh-bar{display:none}
+            #header button{font-size:12px!important;padding:3px 8px!important}
             #main{display:flex;flex-direction:column;height:auto;overflow:visible}
             /* 自选股横滑条 */
             #watchlist-panel{flex-shrink:0;border-right:none;border-bottom:1px solid var(--border);flex-direction:row;align-items:center;padding:6px 8px;gap:6px;background:var(--surface)}
