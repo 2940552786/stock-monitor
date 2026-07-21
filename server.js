@@ -132,7 +132,6 @@ serve(async (req) => {
   const path = url.pathname;
   const auth = req.headers.get("Authorization")?.replace("Bearer ", "") || "";
   const user = getUser(auth);
-
   // Auth
   if (path === "/api/auth/register" && req.method === "POST") {
     try {
@@ -210,4 +209,4 @@ serve(async (req) => {
   }
 
   return new Response(INDEX_HTML, { headers: { "Content-Type": "text/html; charset=utf-8" } });
-}, { port: 8000 });
+});
