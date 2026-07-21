@@ -2,9 +2,9 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
 const UA = "Mozilla/5.0";
-const kv = await Deno.openKv();
-const TOKEN_PREFIX = "token_";
-const USER_PREFIX = "user_";
+// 内存存储（Deno Deploy 免费版用内存，数据重启丢失但可用）
+const users = new Map();
+const tokens = new Map();
 
 function parseCode(raw) {
   raw = raw.trim().toLowerCase();
@@ -21,21 +21,16 @@ function parseCode(raw) {
 
 async function hash(str) {
   const data = new TextEncoder().encode(str);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+  const hb = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hb)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
-
-async function getUser(token) {
-  if (!token) return null;
-  const userEntry = await kv.get([TOKEN_PREFIX, token]);
-  if (!userEntry.value) return null;
-  const userName = userEntry.value;
-  const userData = await kv.get([USER_PREFIX, userName]);
-  return userData.value ? { name: userName, ...userData.value } : null;
+function getUser(token) {
+  if (!token || !tokens.has(token)) return null;
+  const name = tokens.get(token);
+  return users.has(name) ? { name, ...users.get(name) } : null;
 }
-
 function randomToken() {
-  return Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, "0")).join("");
+  return crypto.randomUUID();
 }
 
 async function fetchTrend(code, market) {
@@ -157,27 +152,24 @@ async function handleRequest(req) {
     if (!username || !password) return Response.json({error:"用户名和密码不能为空"}, {status:400});
     if (username.length < 2) return Response.json({error:"用户名至少2个字符"}, {status:400});
     if (password.length < 3) return Response.json({error:"密码至少3位"}, {status:400});
-    const existing = await kv.get([USER_PREFIX, username]);
-    if (existing.value) return Response.json({error:"用户名已存在"}, {status:400});
-    const pwHash = await hash(password);
-    await kv.set([USER_PREFIX, username], {password:pwHash, watchlist:[], webhook:""});
+    if (users.has(username)) return Response.json({error:"用户名已存在"}, {status:400});
+    users.set(username, {password: await hash(password), watchlist: [], webhook: ""});
     const token = randomToken();
-    await kv.set([TOKEN_PREFIX, token], username);
+    tokens.set(token, username);
     return Response.json({ok:true, token, username});
   }
   if (path === "/api/auth/login" && req.method === "POST") {
     const body = await req.json();
     const username = (body.username || "").trim(), password = (body.password || "").trim();
-    const userData = await kv.get([USER_PREFIX, username]);
-    if (!userData.value) return Response.json({error:"用户名或密码错误"}, {status:401});
-    const pwHash = await hash(password);
-    if (userData.value.password !== pwHash) return Response.json({error:"用户名或密码错误"}, {status:401});
+    if (!users.has(username)) return Response.json({error:"用户名或密码错误"}, {status:401});
+    const pw = await hash(password);
+    if (users.get(username).password !== pw) return Response.json({error:"用户名或密码错误"}, {status:401});
     const token = randomToken();
-    await kv.set([TOKEN_PREFIX, token], username);
+    tokens.set(token, username);
     return Response.json({ok:true, token, username});
   }
   if (path === "/api/auth/logout" && req.method === "POST") {
-    if (auth) await kv.delete([TOKEN_PREFIX, auth]);
+    if (auth) tokens.delete(auth);
     return Response.json({ok:true});
   }
 
@@ -188,11 +180,11 @@ async function handleRequest(req) {
 
   if (path === "/api/watchlist/sync" && req.method === "POST") {
     const body = await req.json();
-    if (body.watchlist) {
+    if (body.watchlist && user) {
       user.watchlist = body.watchlist;
-      await kv.set([USER_PREFIX, user.name], user);
+      users.set(user.name, user);
     }
-    return Response.json({ok:true, watchlist:user.watchlist||[], role:user.name==="admin"?"admin":"user"});
+    return Response.json({ok:true, watchlist:user?.watchlist||[], role:user?.name==="admin"?"admin":"user"});
   }
 
   if (path === "/api/signals") {
