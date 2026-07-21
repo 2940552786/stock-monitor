@@ -1,0 +1,15 @@
+name: Deploy to Deno
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: denoland/deployctl@v1
+        with:
+          project: stock-monitor
+          entrypoint: server.js
+          include: index.html,server.js
+
