@@ -1,0 +1,6 @@
+{
+  "deploy": {
+    "entrypoint": "server.js",
+    "include": ["server.js", "index.html"]
+  }
+}
