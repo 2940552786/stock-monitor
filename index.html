@@ -90,6 +90,24 @@
         ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 
         /* ========== 手机端适配 (≤768px) ========== */
+        @media (max-width: 768px) {
+            body{overflow-y:auto;height:auto}
+            #main{display:flex;flex-direction:column;height:auto}
+            #watchlist-panel{flex-shrink:0;border-right:none;border-bottom:1px solid var(--border);flex-direction:row;align-items:center;padding:4px 6px;gap:4px}
+            #watchlist-panel h3{display:none}
+            #watchlist{flex:1;overflow-x:auto;overflow-y:hidden;display:flex;gap:4px;padding:0;white-space:nowrap;min-height:32px;align-items:center}
+            #watchlist::-webkit-scrollbar{display:none}
+            .watch-item{flex-shrink:0;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:14px;margin:0;white-space:nowrap}
+            .watch-item.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+            #add-stock{display:none}
+            #center-panel{padding:4px;gap:4px;flex:1;min-height:60vh}
+            #stock-bar{padding:6px 8px;font-size:12px;flex-wrap:wrap;gap:2px 6px}
+            #trend-chart{flex:none;height:300px}
+            #signal-console{flex:none;max-height:200px}
+            #chip-chart{flex:none;height:150px}
+            #info-panel{border-left:none;border-top:1px solid var(--border);padding:8px;flex-shrink:0}
+            .chip-metric{padding:6px 8px;margin:2px 0}
+        }
     </style>
 </head>
 <body>
