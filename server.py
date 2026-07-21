@@ -20,6 +20,20 @@ CORS(app)
 USERS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'users.json')
 user_tokens = {}  # {token: username}
 
+def _load_tokens():
+    global user_tokens
+    try:
+        if os.path.exists(USERS_FILE):
+            with open(USERS_FILE, 'r', encoding='utf-8') as f:
+                users = json.load(f)
+            for u, d in users.items():
+                t = d.get('_token', '')
+                if t: user_tokens[t] = u
+            print(f"[认证] 加载了 {len(user_tokens)} 个持久化token")
+    except: pass
+
+_load_tokens()
+
 def _load_users():
     if os.path.exists(USERS_FILE):
         with open(USERS_FILE, 'r', encoding='utf-8') as f:
@@ -53,6 +67,25 @@ def is_trading_time():
     if 13 * 60 <= t < 15 * 60:
         return True
     return False
+
+
+def is_auction_time(market='sz'):
+    """检查当前是否在集合竞价时段
+    早盘: 9:15-9:25 (沪深都有)
+    尾盘: 14:57-15:00 (仅深市 sz/0开头/3开头/2开头)
+    返回: 'pre' | 'post' | None
+    """
+    now = datetime.datetime.now()
+    if now.weekday() >= 5:
+        return None
+    t = now.hour * 60 + now.minute
+    if 9 * 60 + 15 <= t < 9 * 60 + 25:
+        return 'pre'
+    # 尾盘集合竞价仅深市
+    if market and market not in ('sh', 'bj'):
+        if 14 * 60 + 57 <= t < 15 * 60:
+            return 'post'
+    return None
 
 # ============ 通用请求头 ============
 UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -103,6 +136,52 @@ def _save_ob_history():
 
 _load_ob_history()
 atexit.register(_save_ob_history)
+
+# 集合竞价历史持久化
+AUCTION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'call_auction.json')
+call_auction_history = {}  # {code: [{time, price, volume}, ...]}
+MAX_AUCTION_SNAPS = 300  # 最大竞价快照数
+
+def _load_auction_history():
+    """从文件加载集合竞价历史"""
+    global call_auction_history
+    try:
+        if os.path.exists(AUCTION_FILE):
+            with open(AUCTION_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            saved_date = data.get('_date', '')
+            today = time.strftime('%Y%m%d')
+            if saved_date == today:
+                call_auction_history = {k: v for k, v in data.items() if not k.startswith('_')}
+                print(f"[竞价] 加载今日历史 {sum(len(v) for v in call_auction_history.values())} 条快照")
+            else:
+                print(f"[竞价] 文件日期{saved_date} ≠ 今日{today}，已清空")
+    except Exception as e:
+        print(f"[竞价] 加载失败: {e}")
+
+def _save_auction_history():
+    """保存集合竞价历史到文件，原子写入+锁防损坏"""
+    # 竞价数据保存也覆盖竞价+连续交易时段
+    now = datetime.datetime.now()
+    if now.weekday() >= 5:
+        return
+    t = now.hour * 60 + now.minute
+    # 在 9:15-15:10 之间都可以保存
+    if not (9 * 60 + 15 <= t < 15 * 60 + 10):
+        return
+    with _save_lock:
+        try:
+            data = {'_date': time.strftime('%Y%m%d')}
+            data.update(call_auction_history)
+            tmp = AUCTION_FILE + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False)
+            os.replace(tmp, AUCTION_FILE)
+        except Exception as e:
+            print(f"[竞价] 保存失败: {e}")
+
+_load_auction_history()
+atexit.register(_save_auction_history)
 
 # 已确认信号缓存
 confirmed_signals = {}
@@ -175,8 +254,7 @@ def parse_orderbook(f):
 
 @app.route('/api/auth/register', methods=['POST'])
 def api_register():
-    data = request.get_json()
-    if not data: return jsonify({'error': '请提供JSON'}), 400
+    data = request.get_json(silent=True) or {}
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
     webhook = data.get('webhook', '').strip()
@@ -186,16 +264,16 @@ def api_register():
     users = _load_users()
     if username in users: return jsonify({'error': '用户名已存在'}), 400
     pw_hash = _hash_pw(password)
-    users[username] = {'password': pw_hash, 'webhook': webhook, 'watchlist': [], 'confirmed_signals': {}, 'pushed_signals': []}
-    _save_users(users)
+    users[username] = {'password': pw_hash, 'webhook': webhook, 'watchlist': [], 'confirmed_signals': {}, 'pushed_signals': [], 'role': 'user'}
     token = secrets.token_hex(16)
+    users[username]['_token'] = token
+    _save_users(users)
     user_tokens[token] = username
     return jsonify({'ok': True, 'token': token, 'username': username})
 
 @app.route('/api/auth/login', methods=['POST'])
 def api_login():
-    data = request.get_json()
-    if not data: return jsonify({'error': '请提供JSON'}), 400
+    data = request.get_json(silent=True) or {}
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
     webhook = data.get('webhook', '').strip()
@@ -204,10 +282,11 @@ def api_login():
     if users[username]['password'] != _hash_pw(password): return jsonify({'error': '用户名或密码错误'}), 401
     token = secrets.token_hex(16)
     user_tokens[token] = username
+    users[username]['_token'] = token
     # 如果输入了新webhook则更新
     if webhook:
         users[username]['webhook'] = webhook
-        _save_users(users)
+    _save_users(users)
     return jsonify({'ok': True, 'token': token, 'username': username, 'webhook': users[username].get('webhook', '')})
 
 @app.route('/api/auth/logout', methods=['POST'])
@@ -220,15 +299,48 @@ def api_logout():
 def api_watchlist_sync():
     username, user = _get_user_from_request()
     if not username: return jsonify({'error': '请先登录'}), 401
-    data = request.get_json()
-    if not data: return jsonify({'error': '请提供JSON'}), 400
-    # 如果传了watchlist就更新，否则返回当前watchlist
+    data = request.get_json(silent=True) or {}
     if 'watchlist' in data:
         user['watchlist'] = data.get('watchlist', [])
         users = _load_users()
         users[username] = user
         _save_users(users)
-    return jsonify({'ok': True, 'watchlist': user.get('watchlist', [])})
+    return jsonify({'ok': True, 'watchlist': user.get('watchlist', []), 'role': user.get('role', 'user')})
+
+@app.route('/api/admin/users', methods=['GET'])
+def api_admin_users():
+    username, user = _get_user_from_request()
+    if not username or user.get('role') != 'admin':
+        return jsonify({'error': '无权限'}), 403
+    users = _load_users()
+    result = []
+    for u, d in users.items():
+        result.append({
+            'username': u,
+            'role': d.get('role', 'user'),
+            'watchlist': d.get('watchlist', []),
+            'webhook': d.get('webhook', '')[:50] + '...' if d.get('webhook') else '',
+            'signal_count': len(d.get('pushed_signals', []))
+        })
+    return jsonify({'users': result})
+
+@app.route('/api/admin/users/<target>', methods=['DELETE'])
+def api_admin_delete_user(target):
+    username, user = _get_user_from_request()
+    if not username or user.get('role') != 'admin':
+        return jsonify({'error': '无权限'}), 403
+    if target == username:
+        return jsonify({'error': '不能删除自己'}), 400
+    users = _load_users()
+    if target not in users:
+        return jsonify({'error': '用户不存在'}), 404
+    del users[target]
+    _save_users(users)
+    # 清除该用户的token
+    for t, u in list(user_tokens.items()):
+        if u == target:
+            del user_tokens[t]
+    return jsonify({'ok': True})
 
 # ============ API 路由 ============
 
@@ -259,7 +371,31 @@ def api_quote():
         # 解析盘口数据
         ob = parse_orderbook(f)
 
-        # 保存盘口快照到时序缓存
+        # ── 集合竞价数据采集 ──
+        auction_phase = is_auction_time(info['market'])
+        if auction_phase:
+            # 新浪API在竞价时段: field[6]=bid1(虚拟撮合价), field[10]=bid1量(虚拟匹配量)
+            auction_price = float(f[6] or 0)
+            auction_vol = int(float(f[10] or 0))
+            now_ts = time.strftime('%H:%M:%S')
+            if auction_price > 0:
+                code_key = info['code']
+                if code_key not in call_auction_history:
+                    call_auction_history[code_key] = []
+                # 去重：同一秒不重复记录
+                hist = call_auction_history[code_key]
+                if not hist or hist[-1]['time'] != now_ts:
+                    hist.append({
+                        'time': now_ts,
+                        'price': round(auction_price, 2),
+                        'volume': auction_vol,
+                        'phase': auction_phase,  # 'pre' or 'post'
+                    })
+                    if len(hist) > MAX_AUCTION_SNAPS:
+                        hist[:] = hist[-MAX_AUCTION_SNAPS:]
+                # 每5次保存一次
+                if len(hist) % 5 == 0:
+                    _save_auction_history()
 
         data = {
             'name': f[0], 'open': float(f[1] or 0),
@@ -365,17 +501,58 @@ def api_trend():
             cum_amount += t['amount']
             t['avg_price'] = round(cum_amount / (cum_volume * 100), 2) if cum_volume > 0 else t['price']
 
+        # ── 构建集合竞价数据 ──
+        auction_snaps = call_auction_history.get(info['code'], [])
+        auction_pre = [{'time': s['time'], 'price': s['price'], 'volume': s['volume']}
+                       for s in auction_snaps if s.get('phase') == 'pre']
+        auction_post = [{'time': s['time'], 'price': s['price'], 'volume': s['volume']}
+                        for s in auction_snaps if s.get('phase') == 'post']
+
         result = {
             'code': info['code'], 'market': info['market'],
             'yesterday_close': pre_close,
             'trends': trends,
             'orderbook_timeline': orderbook_history.get(info['code'], []),
+            'call_auction': {
+                'pre': auction_pre,
+                'post': auction_post,
+            },
         }
         set_cache(key, result)
         return jsonify(result)
 
     except Exception as e:
         return jsonify({'error': f'获取分时数据失败: {str(e)}'}), 500
+
+
+@app.route('/api/call-auction')
+def api_call_auction():
+    """获取集合竞价数据（早盘9:15-9:25 + 尾盘14:57-15:00深市）"""
+    raw_code = request.args.get('code', '')
+    if not raw_code:
+        return jsonify({'error': '请提供股票代码'}), 400
+
+    info = parse_code(raw_code)
+    code = info['code']
+    snaps = call_auction_history.get(code, [])
+
+    auction_pre = [{'time': s['time'], 'price': s['price'], 'volume': s['volume']}
+                   for s in snaps if s.get('phase') == 'pre']
+    auction_post = [{'time': s['time'], 'price': s['price'], 'volume': s['volume']}
+                    for s in snaps if s.get('phase') == 'post']
+
+    return jsonify({
+        'code': code,
+        'market': info['market'],
+        'call_auction': {
+            'pre': auction_pre,
+            'post': auction_post,
+        },
+        'pre_count': len(auction_pre),
+        'post_count': len(auction_post),
+        'last_pre_time': auction_pre[-1]['time'] if auction_pre else None,
+        'last_post_time': auction_post[-1]['time'] if auction_post else None,
+    })
 
 
 @app.route('/api/orderbook/history')
@@ -615,6 +792,26 @@ def api_quote_batch():
             yclose = float(f[2] or 0)
             # 顺便保存盘口快照，让自选股持续积累委比数据
             ob = parse_orderbook(f)
+            # ── 竞价数据采集（批量接口也收集）──
+            auction_phase = is_auction_time(info['market'])
+            if auction_phase:
+                auction_price = float(f[6] or 0)
+                auction_vol = int(float(f[10] or 0))
+                now_ts = time.strftime('%H:%M:%S')
+                if auction_price > 0:
+                    code_key = info['code']
+                    if code_key not in call_auction_history:
+                        call_auction_history[code_key] = []
+                    hist = call_auction_history[code_key]
+                    if not hist or hist[-1]['time'] != now_ts:
+                        hist.append({
+                            'time': now_ts,
+                            'price': round(auction_price, 2),
+                            'volume': auction_vol,
+                            'phase': auction_phase,
+                        })
+                        if len(hist) > MAX_AUCTION_SNAPS:
+                            hist[:] = hist[-MAX_AUCTION_SNAPS:]
             results.append({
                 'code': info['code'], 'market': info['market'],
                 'name': f[0], 'price': price,
@@ -634,12 +831,12 @@ if os.path.exists(PUSH_TOKEN_FILE):
         PUSH_WEBHOOK = f.read().strip()
     print(f"[推送] 企业微信Webhook已加载")
 
-def push_wechat(webhook, title, content):
-    """通过企业微信机器人推送"""
+def push_wechat(webhook, content):
+    """通过企业微信机器人推送（markdown格式）"""
     if not webhook:
         return
     try:
-        data = {'msgtype': 'text', 'text': {'content': f"{title}\n{content}"}}
+        data = {'msgtype': 'markdown', 'markdown': {'content': content}}
         requests.post(webhook, json=data, timeout=5)
     except:
         pass
@@ -656,13 +853,15 @@ def api_signals():
     if not codes:
         return jsonify({'error': '请提供股票代码'}), 400
 
-    # 每日重置（per-user）
+    # 每日重置（per-user）+ 检测逻辑版本号变更自动清空
     today = time.strftime('%Y%m%d')
-    if user['confirmed_signals'].get('_date') != today:
-        user['confirmed_signals'] = {'_date': today}
+    DETECT_VER = 12  # 每次改检测逻辑就 +1，旧信号自动清空重检
+    if user.get('_signal_date') != today or user.get('_signal_ver') != DETECT_VER:
+        user['confirmed_signals'] = {}
+        user['_signal_date'] = today
+        user['_signal_ver'] = DETECT_VER
         user['pushed_signals'] = []
     confirmed_signals = user['confirmed_signals']
-    pushed_signals = set(user['pushed_signals'])
 
     code_list = [c.strip() for c in codes.split(',') if c.strip()][:10]
     results = []
@@ -720,6 +919,7 @@ def api_signals():
                     cum_volume += t['volume']
                     cum_amount += t['amount']
                     t['avg_price'] = round(cum_amount / (cum_volume * 100), 2) if cum_volume > 0 else t['price']
+                # 计算多空指标（新加载的数据需要算，缓存数据已有）
             else:
                 trends = trend_cached['trends']
                 pre_close = trend_cached.get('yesterday_close', 0)
@@ -727,107 +927,27 @@ def api_signals():
             if not trends or len(trends) < 10:
                 continue
 
-            # 顶底检测（预测版：纯左侧，实时判断）
+            # ── 实时异动检测 ──
             prices = [t['price'] for t in trends]
             volumes = [t['volume'] for t in trends]
             avg_prices = [t.get('avg_price', t['price']) for t in trends]
             n = len(prices)
-            MAX_W = 12
-            MIN_I = 6
-            tops, bottoms = [], []
+            events = []
 
-            # ── 涨跌停检测：所有分钟都检查，不受MIN_I限制 ──
-            limit_up = pre_close * 1.10
-            limit_down = pre_close * 0.90
-            for i in range(1, n):
-                cp = prices[i]
-                if cp >= limit_up * 0.998:
-                    prev_cp = prices[i-1]
-                    if prev_cp < limit_up * 0.998:
-                        tops.append({'index': i, 'price': round(cp, 2), 'time': trends[i]['time'], 'source': 'limit'})
-                if cp <= limit_down * 1.002:
-                    prev_cp = prices[i-1]
-                    if prev_cp > limit_down * 1.002:
-                        bottoms.append({'index': i, 'price': round(cp, 2), 'time': trends[i]['time'], 'source': 'limit'})
+            def chg(i, nmin):
+                if i < nmin: return 0
+                return (prices[i] - prices[i-nmin]) / prices[i-nmin] * 100
 
-            for i in range(MIN_I, n):
-                cp, cv, ap = prices[i], volumes[i], avg_prices[i]
-                if cv <= 0:
-                    continue
+            def dkv(i, k):
+                v = trends[i].get(k)
+                return v if v is not None else None
 
-                # 渐进窗口：i=6→W=3, i=24→W=12
-                effW = min(MAX_W, max(3, i // 2))
-                window_vols = volumes[i-effW:i+1]
-                avgV = sum(window_vols) / (effW + 1)
-                # 动态放量门槛：只要有一笔即可
-                vol_ok = cv > 1
-
-                isLeftMax = all(prices[j] < cp for j in range(i-effW, i))
-                isLeftMin = all(prices[j] > cp for j in range(i-effW, i))
-
-                dev_pct = (cp - ap) / ap * 100
-
-                # 自适应超涨/超跌阈值：日内价格偏离VWAP的P90分位数
-                dyn_dev = 0.6  # 默认
-                if i >= 15:
-                    past_devs = [abs(prices[j] - avg_prices[j]) / avg_prices[j] * 100 for j in range(1, i+1) if avg_prices[j] > 0]
-                    if past_devs:
-                        past_devs.sort()
-                        dyn_dev = max(past_devs[int(len(past_devs) * 0.85)], 0.25)
-
-                # VWAP回归斜率：近8分钟均价趋势（%/min）
-                vwap_slope = 0
-                if i >= 8:
-                    seg = avg_prices[i-7:i+1]  # 8个点
-                    n_v = len(seg)
-                    xm = (n_v - 1) / 2.0
-                    ym = sum(seg) / n_v
-                    num_v = sum((j - xm) * (seg[j] - ym) for j in range(n_v))
-                    den_v = sum((j - xm) ** 2 for j in range(n_v))
-                    if den_v != 0:
-                        vwap_slope = (num_v / den_v) / ym * 100  # 相对于均值的%变化率
-
-                # 自适应斜率阈值：日内VWAP分钟变化的80分位数 × 2
-                slope_limit = 0.03  # 默认
-                tick_slope = 0.01 / ap * 100 / 8 * 1.5 if ap > 0 else 0
-                slope_limit = max(slope_limit, tick_slope)
-                if i >= 20:
-                    vwap_changes = []
-                    for j in range(1, i + 1):
-                        if avg_prices[j-1] > 0:
-                            vwap_changes.append(abs(avg_prices[j] - avg_prices[j-1]) / avg_prices[j-1] * 100)
-                    if vwap_changes:
-                        vwap_changes.sort()
-                        p80 = vwap_changes[int(len(vwap_changes) * 0.8)]
-                        # tick粒度保护：低价股1分钱就是大波动
-                        tick_slope = 0.01 / ap * 100 / 8 * 1.5 if ap > 0 else 0
-                        slope_limit = max(p80 * 2, 0.015, tick_slope)
-                top_slope_ok = vwap_slope < slope_limit
-                bot_slope_ok = vwap_slope > -slope_limit
-
-                # 价格-VWAP背离：当前偏离是否远超近8分钟平均水平
-                divergence_ok = True
-                if i >= 8:
-                    current_dev = abs(cp - ap) / ap * 100
-                    past_devs = [abs(prices[j] - avg_prices[j]) / avg_prices[j] * 100 for j in range(i-8, i)]
-                    avg_past_dev = sum(past_devs) / len(past_devs)
-                    divergence_ok = current_dev < avg_past_dev * 2.5
-
-                if isLeftMax and vol_ok and dev_pct > dyn_dev and top_slope_ok and divergence_ok:
-                    tops.append({'index': i, 'price': round(cp, 2), 'time': trends[i]['time']})
-                if isLeftMin and vol_ok and dev_pct < -dyn_dev and bot_slope_ok and divergence_ok:
-                    bottoms.append({'index': i, 'price': round(cp, 2), 'time': trends[i]['time']})
-
-            # ── 信号确认：去重后直接入队 ──
-
-            # 获取当前盘口委比（同时获取名称）
-            order_imbalance = 0
+            # 获取股票名
             name = info['code']
-            quote_key = f"quote:{info['sina_code']}"
-            quote_cached = get_cached(quote_key)
-            if quote_cached:
-                order_imbalance = quote_cached.get('order_imbalance', 0)
-                name = quote_cached.get('name', info['code'])
+            qk = f"quote:{info['sina_code']}"
+            qc = get_cached(qk)
+            if qc:
+                name = qc.get('name', info['code'])
             else:
                 try:
                     qurl = f"http://hq.sinajs.cn/list={info['sina_code']}"
@@ -836,74 +956,129 @@ def api_signals():
                     qm = re.search(r'"([^"]*)"', qresp.text)
                     if qm:
                         qf = qm.group(1).split(',')
-                        if len(qf) >= 30:
-                            ob = parse_orderbook(qf)
-                            order_imbalance = ob['order_imbalance']
                         if len(qf) > 0 and qf[0]:
                             name = qf[0]
-                except Exception:
+                except:
                     pass
 
-            # 获取或初始化已确认信号
-            code_key = info['code']
-            if code_key not in confirmed_signals:
-                confirmed_signals[code_key] = {'tops': [], 'bottoms': []}
-            stored = confirmed_signals[code_key]
-            stored_top_times = {s['time'] for s in stored['tops']}
-            stored_bot_times = {s['time'] for s in stored['bottoms']}
+            events = []
+            # 从已存储事件恢复上次的严重级别，避免跨轮询重复报
+            ck = info['code']
+            stored_all = confirmed_signals.get(ck, [])
+            stored_surge = [s for s in stored_all if s['t']=='surge']
+            stored_plunge = [s for s in stored_all if s['t']=='plunge']
+            last_sv_up = {'high':3,'medium':2,'low':1}.get(stored_surge[-1]['s'],0) if stored_surge else 0
+            last_sv_dn = {'high':3,'medium':2,'low':1}.get(stored_plunge[-1]['s'],0) if stored_plunge else 0
+            for i in range(1, n):
+                cp = prices[i]; cv = volumes[i]
+                pp = prices[i-1]
 
-            # ── 信号入队 ──
-            for s in tops:
-                if s['time'] not in stored_top_times:
-                    s['confidence'] = 'high'
-                    stored['tops'].append(s)
+                c3 = chg(i, 3)
+                sv_up = 3 if c3 >= 1.8 else (2 if c3 >= 1.2 else (1 if c3 >= 0.8 else 0))
+                sv_dn = 3 if c3 <= -1.8 else (2 if c3 <= -1.2 else (1 if c3 <= -0.8 else 0))
+                if sv_up > last_sv_up:
+                    lb = ['','轻度急拉','中度急拉','强烈急拉'][sv_up]
+                    cl = ['','#ff9933','#ff7733','#ff3333'][sv_up]
+                    events.append({'t':'surge','l':lb,'s':['low','medium','high'][sv_up-1],'p':cp,'d':f'+{c3:.1f}%/3min','c':cl,'idx':i})
+                last_sv_up = sv_up
+                if sv_dn > last_sv_dn:
+                    lb = ['','轻度急跌','中度急跌','强烈急跌'][sv_dn]
+                    cl = ['','#009944','#00aa44','#00cc44'][sv_dn]
+                    events.append({'t':'plunge','l':lb,'s':['low','medium','high'][sv_dn-1],'p':cp,'d':f'{c3:.1f}%/3min','c':cl,'idx':i})
+                last_sv_dn = sv_dn
 
-            for s in bottoms:
-                if s['time'] not in stored_bot_times:
-                    s['confidence'] = 'high'
-                    stored['bottoms'].append(s)
+                if i >= 5:
+                    hi = max(prices[:i]); lo = min(prices[:i])
+                    if cp > hi: events.append({'t':'new_high','l':'新高','s':'low','p':cp,'d':f'¥{cp:.2f}','c':'#ff4444','idx':i})
+                    if cp < lo: events.append({'t':'new_low','l':'新低','s':'low','p':cp,'d':f'¥{cp:.2f}','c':'#00cc66','idx':i})
 
-            if stored['tops'] or stored['bottoms']:
+            # 去重
+            sev = {'high':3,'medium':2,'low':1}
+            dedup = {}; out = []
+            for e in events:
+                k = f"{e['t']}_{e['idx']//3}"
+                if k in dedup:
+                    if sev.get(e['s'],0) > sev.get(out[dedup[k]]['s'],0):
+                        out[dedup[k]] = e
+                else:
+                    dedup[k] = len(out); out.append(e)
+            events = out
+
+            # 入队
+            if ck not in confirmed_signals: confirmed_signals[ck] = []
+            stored = confirmed_signals[ck]
+            skeys = {f"{s['t']}|{s['time']}" for s in stored}
+            for e in events:
+                e['time'] = trends[e['idx']]['time']
+                sk = f"{e['t']}|{e['time']}"
+                if sk not in skeys:
+                    stored.append({k:e[k] for k in ['t','l','s','p','d','c','time']})
+                    skeys.add(sk)
+            if len(stored) > 50: stored = stored[-50:]
+            confirmed_signals[ck] = stored
+
+            if stored:
                 results.append({
-                    'code': info['code'],
-                    'name': name,
+                    'code': info['code'], 'name': name,
                     'last_price': prices[-1] if prices else 0,
                     'pre_close': pre_close,
-                    'order_imbalance': order_imbalance,
-                    'tops': stored['tops'],
-                    'bottoms': stored['bottoms'],
+                    'events': stored,
                 })
 
         except Exception:
             continue
 
-    # 微信推送新信号（仅推最近2分钟内的）
+    # ── 推送 + 保存 ──
     now_hm = time.strftime('%H:%M')
     now_min = int(now_hm[:2]) * 60 + int(now_hm[3:])
-    for r in results:
-        for t in r.get('tops', []) + r.get('bottoms', []):
-            sig_key = f"{r['code']}|{t['time']}"
-            if sig_key not in pushed_signals:
-                pushed_signals.add(sig_key)
-                tm = t['time']
-                hm = tm[11:16] if len(tm) >= 16 else tm[:5]
-                sig_min = int(hm[:2]) * 60 + int(hm[3:])
-                if now_min - sig_min <= 2:  # 只推2分钟内的
-                    tp = '🔴顶' if t in r.get('tops', []) else '🟢底'
-                    push_wechat(user.get('webhook', ''), f"{tp} {r['name']} {r['code']}", f"价格: ¥{t['price']}\n时间: {tm}\n{r['name']}({r['code']})")
+    all_users = _load_users()
+    for uname, udata in all_users.items():
+        wh = udata.get('webhook', '')
+        if not wh: continue
+        if udata.get('_push_date') != today:
+            udata['pushed_signals'] = []; udata['_push_date'] = today
+        pushed = set(udata.get('pushed_signals', []))
+        wl_codes = {s.get('code','') if isinstance(s,dict) else str(s) for s in udata.get('watchlist',[])}
+        for r in results:
+            if r['code'] not in wl_codes: continue
+            # 按分钟分组，合并同时间事件
+            byMin = {}
+            ICONS = {'surge':'🔥','plunge':'💧','new_high':'🚀','new_low':'💀'}
+            for e in r.get('events', []):
+                ek = f"{r['code']}|{e['t']}|{e['time']}"
+                if ek in pushed: continue
+                tm = e['time']; hm = tm[11:16] if len(tm)>=16 else tm[:5]
+                if abs(now_min - (int(hm[:2])*60+int(hm[3:]))) > 5: continue
+                pushed.add(ek)
+                mk = f"{r['code']}|{hm}"
+                if mk not in byMin: byMin[mk] = {'name':r['name'],'code':r['code'],'tm':hm,'price':e['p'],'lines':[]}
+                icon = ICONS.get(e['t'], '📌')
+                color = e.get('c','#ff4444').replace('#','')
+                sev = {'high':'🔥🔥🔥','medium':'🔥🔥','low':'🔥'}.get(e.get('s',''),'')
+                byMin[mk]['lines'].append(f"{icon} **<font color=\"{color}\">{e['l']}</font>** {sev}  {e['d']}")
+            for mk, grp in byMin.items():
+                md = f"**{grp['tm']}**  {grp['name']}({grp['code']})  ¥{grp['price']}\n" + '\n'.join(grp['lines'])
+                push_wechat(wh, md)
+        udata['pushed_signals'] = list(pushed)
 
     user['confirmed_signals'] = confirmed_signals
-    user['pushed_signals'] = list(pushed_signals)
-    users = _load_users()
-    users[username] = user
-    _save_users(users)
+    if username in all_users:
+        user['pushed_signals'] = all_users[username].get('pushed_signals', [])
+        user['_push_date'] = all_users[username].get('_push_date', today)
+    all_users[username] = user
+    _save_users(all_users)
 
-    return jsonify({'signals': results, 'time': time.strftime('%H:%M:%S'), 'ver': 3})
+    return jsonify({'signals': results, 'time': time.strftime('%H:%M:%S'), 'ver': 4})
 
 
 @app.route('/')
 def index():
-    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), 'index.html')
+    from flask import make_response
+    resp = make_response(send_from_directory(os.path.dirname(os.path.abspath(__file__)), 'index.html'))
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 
 if __name__ == '__main__':

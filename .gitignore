@@ -5,3 +5,7 @@ ob_history.json.tmp
 tracked_stocks.json
 push_token.txt
 *.pyc
+users.json
+ob_history.json
+__pycache__/
+*.pyc
