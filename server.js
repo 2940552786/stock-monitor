@@ -1,46 +1,68 @@
-import { Hono } from "https://deno.land/x/hono@v3.11.7/mod.ts";
-import { cors } from "https://deno.land/x/hono@v3.11.7/middleware/cors/index.ts";
+// 最简版 - 测试登录
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
-const app = new Hono();
-app.use("/*", cors());
-
-const UA = "Mozilla/5.0";
 const users = new Map();
 const tokens = new Map();
 
-function sha256(s) {
+async function sha256(s) {
   const d = new TextEncoder().encode(s);
-  return crypto.subtle.digest("SHA-256", d).then(h =>
-    Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, "0")).join("")
-  );
+  const h = await crypto.subtle.digest("SHA-256", d);
+  return Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
-function rnd() { return crypto.randomUUID(); }
 
-app.post("/api/auth/register", async (c) => {
-  const { username, password } = await c.req.json();
-  if (!username || !password) return c.json({ error: "填写用户名和密码" }, 400);
-  if (users.has(username)) return c.json({ error: "用户名已存在" }, 400);
-  users.set(username, { password: await sha256(password), watchlist: [] });
-  const tk = rnd(); tokens.set(tk, username);
-  return c.json({ ok: true, token: tk, username });
+let HTML = "";
+try { HTML = Deno.readTextFileSync("./index.html"); } catch { HTML = "<h1>index.html not found</h1>"; }
+
+serve(async (req) => {
+  const url = new URL(req.url);
+  const p = url.pathname;
+  
+  try {
+    // CORS for all
+    if (req.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type,Authorization",
+      }});
+    }
+
+    if (p === "/api/auth/register" && req.method === "POST") {
+      const b = await req.json();
+      const u = (b.username || "").trim(), pw = (b.password || "").trim();
+      if (!u || !pw) return json({error:"填写用户名和密码"},400);
+      if (users.has(u)) return json({error:"用户名已存在"},400);
+      users.set(u, {password: await sha256(pw), watchlist:[]});
+      const tk = crypto.randomUUID();
+      tokens.set(tk, u);
+      return json({ok:true, token:tk, username:u});
+    }
+
+    if (p === "/api/auth/login" && req.method === "POST") {
+      const b = await req.json();
+      const u = (b.username || "").trim(), pw = (b.password || "").trim();
+      if (!users.has(u)) return json({error:"用户名或密码错误"},401);
+      if (users.get(u).password !== await sha256(pw)) return json({error:"用户名或密码错误"},401);
+      const tk = crypto.randomUUID();
+      tokens.set(tk, u);
+      return json({ok:true, token:tk, username:u});
+    }
+
+    if (p === "/api/watchlist/sync") return json({ok:true, watchlist:[], role:"user"});
+    if (p === "/api/signals") return json({signals:[], time:new Date().toISOString().slice(11,19)});
+    if (p === "/api/trend") return json({error:"nyi"},500);
+    if (p === "/api/quote") return json({error:"nyi"},500);
+
+    // Serve HTML for all other paths
+    return new Response(HTML, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+  } catch (e) {
+    return json({error: "服务器内部错误: " + (e.message || e)}, 500);
+  }
 });
 
-app.post("/api/auth/login", async (c) => {
-  const { username, password } = await c.req.json();
-  if (!users.has(username)) return c.json({ error: "用户名或密码错误" }, 401);
-  if (users.get(username).password !== await sha256(password)) return c.json({ error: "用户名或密码错误" }, 401);
-  const tk = rnd(); tokens.set(tk, username);
-  return c.json({ ok: true, token: tk, username });
-});
-
-app.get("/api/signals", async (c) => {
-  return c.json({ signals: [], time: new Date().toISOString().slice(11, 19) });
-});
-
-app.get("/api/trend", (c) => c.json({ error: "not implemented" }, 500));
-app.get("/api/quote", (c) => c.json({ error: "not implemented" }, 500));
-app.post("/api/watchlist/sync", (c) => c.json({ ok: true, watchlist: [] }));
-
-app.get("/", (c) => c.html(Deno.readTextFileSync("./index.html")));
-
-export default app;
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+  });
+}
